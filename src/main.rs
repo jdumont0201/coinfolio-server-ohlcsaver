@@ -75,38 +75,6 @@ impl StringGenericOHLC {
 }
 
 
-pub struct GenericOHLC {
-    ts: i64,
-    o: f64,
-    h: f64,
-    c: f64,
-    l: f64,
-    v: f64,
-}
-
-impl GenericOHLC {
-    fn to_json(&self, broker: &str, pair: &str) -> String {
-        let ts = chrono::Utc.timestamp(self.ts / 1000, 0).format("%Y-%m-%d %H:%M:%S");
-        let s = format!(r#"{{"ts" :"{}","pair"  :"{}","open"  :"{}","high"  :"{}","low":"{}","close":"{}","volume":"{}"}}"#, ts, pair, self.o, self.h, self.l, self.c, self.v);
-        s
-    }
-    fn to_string(&self) -> String {
-        let mut owned_str: String = "".to_owned();
-        owned_str.push_str(&(self.ts.to_string()).to_owned());
-        owned_str.push_str(",");
-        owned_str.push_str(&(self.o.to_string()).to_owned());
-        owned_str.push_str(",");
-        owned_str.push_str(&(self.h.to_string()).to_owned());
-        owned_str.push_str(",");
-        owned_str.push_str(&(self.l.to_string()).to_owned());
-        owned_str.push_str(",");
-        owned_str.push_str(&(self.c.to_string()).to_owned());
-        owned_str.push_str(",");
-        owned_str.push_str(&(self.v.to_string().to_owned()));
-        owned_str.push_str("\n");
-        owned_str
-    }
-}
 
 fn getPairsFromArgs() -> Vec<Pair> {
     let args: Vec<String> = std::env::args().collect();
