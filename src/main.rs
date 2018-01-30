@@ -105,7 +105,7 @@ fn loadAndSaveOHLC(bb: &str, pp: &str) {
 
     let client = reqwest::Client::new();
     let mut lastTs = 0;
-    let uri = format!("https://api.binance.com/api/v1/klines?symbol={}&interval={}", pp.to_string(), "1m");
+    let uri = format!("https://api.binance.com/api/v1/klines?symbol={}&interval={}&limit=2", pp.to_string(), "1m");
     println!("[{}/{}] Launch connection {}", bb.to_string(), pp.to_string(), uri);
 
     let mut result: Vec<StringGenericOHLC> = Vec::new();
