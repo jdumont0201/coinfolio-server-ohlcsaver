@@ -116,13 +116,13 @@ fn loadAndSaveOHLC(bb: &str, pp: &str) {
             let restext = res.text().unwrap();
 
             let res1 = &restext[2..restext.len() - 2];
-            println!("row {}", res1);
+            //println!("row {}", res1);
 
             let resspl: Vec<&str> = res1.split("],[").collect();
             for row in resspl {
                 if row.len() > 1 {
                     let res21: &str = &row[0..row.len()];
-                    println!("  {}", res21);
+                    //println!("  {}", res21);
                     let r: Vec<&str> = res21.split(",").collect();
                     let oo = r[1];
                     let o = oo[1..oo.len() - 1].to_string();
@@ -164,7 +164,7 @@ fn loadAndSaveOHLC(bb: &str, pp: &str) {
 }
 
 fn main() {
-    println!("Coinamics Server Websockets");
+    println!("Coinamics Server OHLC saver");
     let mut children = vec![];
     let PAIRS = getPairsFromArgs();
     let nb = PAIRS.len();
