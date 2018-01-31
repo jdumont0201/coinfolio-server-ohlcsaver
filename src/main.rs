@@ -12,8 +12,7 @@ extern crate job_scheduler;
 #[macro_use]
 extern crate serde_derive;
 extern crate chrono;
-
-
+extern crate rand;
 use std::sync::{Arc, Mutex};
 use std::rc::Rc;
 use std::cell::Cell;
@@ -24,16 +23,13 @@ use ws::{connect, Handler, Sender, Handshake, Result, Message, CloseCode, Respon
 use std::thread;
 use chrono::prelude::*;
 use chrono::{DateTime, TimeZone, NaiveDateTime, Utc};
-
-
+use rand::Rng;
 fn parsei64(i: &String) -> i64 {
     i.parse::<i64>().unwrap()
 }
-
 fn parsef64(i: &String) -> f64 {
     i.parse::<f64>().unwrap()
 }
-
 fn concat(a: &str, b: &str) -> String {
     let mut owned_str: String = "".to_owned();
     owned_str.push_str(a);
@@ -74,8 +70,6 @@ impl StringGenericOHLC {
     }
 }
 
-
-
 fn getPairsFromArgs() -> Vec<Pair> {
     let args: Vec<String> = std::env::args().collect();
     let mut pairs: String;
@@ -85,7 +79,6 @@ fn getPairsFromArgs() -> Vec<Pair> {
         pairs = "bin:ETHUSDT".to_string()
     }
     println!("ENV PAIRS {}", pairs);
-
     let mut PAIRS: Vec<Pair> = Vec::new();
     let pairssp: Vec<&str> = pairs.split(",").collect();
     for p in &pairssp {
@@ -102,22 +95,15 @@ struct Pair {
 }
 
 fn loadAndSaveOHLC(bb: &str, pp: &str) {
-
     let client = reqwest::Client::new();
     let mut lastTs = 0;
     let uri = format!("https://api.binance.com/api/v1/klines?symbol={}&interval={}&limit=2", pp.to_string(), "1m");
-
-
     let mut result: Vec<StringGenericOHLC> = Vec::new();
     if (bb == "bin") {
-
         if let Ok(mut res) = client.get(&uri).send() {
             println!("[{}] [GET] {}_ohlc ", pp.to_string(), res.status());
             let restext = res.text().unwrap();
-
             let res1 = &restext[2..restext.len() - 2];
-            //println!("row {}", res1);
-
             let resspl: Vec<&str> = res1.split("],[").collect();
             for row in resspl {
                 if row.len() > 1 {
@@ -152,7 +138,6 @@ fn loadAndSaveOHLC(bb: &str, pp: &str) {
                             println!("[{}] [POST] nok uri", pp.to_string());
                         }
                     }
-
                 } else {
                     println!("  err row {}", row);
                 }
@@ -169,7 +154,6 @@ fn main() {
     let PAIRS = getPairsFromArgs();
     let nb = PAIRS.len();
     println!("Loading {} pairs", nb);
-
     println!("Starting pair threads");
     for p in PAIRS.iter() {
         println!("[{}/{}] Starting thread", p.broker, p.name);
@@ -177,14 +161,15 @@ fn main() {
         let bb = p.broker.clone();
         children.push(thread::spawn(move || {
             let mut sched = job_scheduler::JobScheduler::new();
+            let mut rng = rand::thread_rng();
 
             sched.add(job_scheduler::Job::new("10 * * * * *".parse().unwrap(), || {
+                let delay = rand::thread_rng().gen_range(0, 5);
+                thread::sleep(std::time::Duration::new(delay, 0));
                 loadAndSaveOHLC(&bb,&pp);
             }));
-
             loop {
                 sched.tick();
-
                 std::thread::sleep(std::time::Duration::from_millis(500));
             }
         }));
