@@ -88,7 +88,16 @@ fn getPairsFromArgs() -> Vec<Pair> {
     }
     PAIRS
 }
+fn getIdFromRow(val:String) -> String{
+    println!("val {}",val);
+    let idstr:Vec<&str>=val.split("id\":").collect();
+    let idstrright=idstr[1];
+    println!("val {}",idstrright);
+    let idstrr:Vec<&str>=idstrright.split("}]").collect();
+    let id=idstrr[0];
 
+    id.to_string()
+}
 struct Pair {
     name: String,
     broker: String,
@@ -101,7 +110,7 @@ fn loadAndSaveOHLC(bb: &str, pp: &str) {
     let mut result: Vec<StringGenericOHLC> = Vec::new();
     if (bb == "bin") {
         if let Ok(mut res) = client.get(&uri).send() {
-            println!("[{}] [GET] {}_ohlc ", pp.to_string(), res.status());
+            println!("[{}] [GET_BRO] {}_ohlc ", pp.to_string(), res.status());
             let restext = res.text().unwrap();
             let res1 = &restext[2..restext.len() - 2];
             let resspl: Vec<&str> = res1.split("],[").collect();
@@ -116,8 +125,9 @@ fn loadAndSaveOHLC(bb: &str, pp: &str) {
                     let l = r[3][1..r[3].len() - 1].to_string();
                     let c = r[4][1..r[4].len() - 1].to_string();
                     let v = r[5][1..r[5].len() - 1].to_string();
+                    let tss=parsei64(&r[0].to_string());
                     let ohlc: StringGenericOHLC = StringGenericOHLC {
-                        ts: parsei64(&r[0].to_string()),
+                        ts: tss,
                         o: o,
                         h: h,
                         l: l,
@@ -132,8 +142,40 @@ fn loadAndSaveOHLC(bb: &str, pp: &str) {
                         result.push(ohlc);
 
                         let uri = format!("http://0.0.0.0:3000/{}_ohlc_1m", bb.to_string());
-                        if let Ok(mut res) = client.post(&uri).body(json).send() {
-                            println!("[{}] [POST] {}_ohlc_1m {} {}", pp.to_string(), bb.to_string(), res.status(), res.text().unwrap());
+                        let tsss = chrono::Utc.timestamp(tss / 1000, 0).format("%Y-%m-%d %H:%M:%S");
+                        let uriexists = format!("http://0.0.0.0:3000/{}_ohlc_1m?pair=eq.{}&ts=eq.'{}'", bb.to_string(),pp.to_string(),tsss);
+                        if let Ok(mut res) = reqwest::get(&uriexists) {
+                            let val:String=res.text().unwrap();
+                            //println!("[{}] [GET_DA] {}_ohlc_1m existing? {} res={} len={}", pp.to_string(), bb.to_string(), res.status(), val, val.len());
+                            if val.len()>2 {
+                                println!("patch");
+                                let id=getIdFromRow(val);
+                                let uripatch = format!("http://0.0.0.0:3000/{}_ohlc_1m?id=eq.{}", bb.to_string(),id);
+                                if let Ok(mut res) = client.patch(&uripatch).body(json).send() {
+                              //      println!("[{}] [PATCH] {}_ohlc_1m {} res={} patchurl{}", pp.to_string(), bb.to_string(), res.status(), res.text().unwrap(),patchurl);
+                                    let st=res.status();
+                                    if st == hyper::StatusCode::NoContent {// ok
+                                  //      println!("[{}] [PATCH] {}_ohlc_1m {} {}", pp.to_string(), bb.to_string(), res.status(), res.text().unwrap());
+                                    } else{
+                                    //    println!("[{}] [POST] {}_ohlc_1m {} {}", pp.to_string(), bb.to_string(), res.status(), res.text().unwrap());
+                                    }
+                                }else{
+                                }
+
+                            }else{
+                                println!("post");
+                                if let Ok(mut res) = client.post(&uri).body(json).send() {
+                                    let st=res.status();
+                                    if st == hyper::StatusCode::Conflict {//existing
+                                //        println!("[{}] [POST] {}_ohlc_1m {} {}", pp.to_string(), bb.to_string(), res.status(), res.text().unwrap());
+                                    }else if st==hyper::StatusCode::Created {//created
+                              //          println!("[{}] [POST] {}_ohlc_1m {} {}", pp.to_string(), bb.to_string(), res.status(), res.text().unwrap());
+                                    } else{
+                            //            println!("[{}] [POST] {}_ohlc_1m {} {}", pp.to_string(), bb.to_string(), res.status(), res.text().unwrap());
+                                    }
+                            }
+                        }
+
                         } else {
                             println!("[{}] [POST] nok uri", pp.to_string());
                         }
