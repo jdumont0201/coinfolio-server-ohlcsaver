@@ -180,7 +180,7 @@ mod Universal {
                     let l = r[3][1..r[3].len() - 1].to_string();
                     let c = r[4][1..r[4].len() - 1].to_string();
                     let v = r[5][1..r[5].len() - 1].to_string();
-                    let tss = parsei64(&r[0].to_string());
+                    let tss:i64 = parsei64(&r[0].to_string());
                     let ohlc: StringGenericOHLC = StringGenericOHLC {
                         ts: tss,
                         o: o,
@@ -193,11 +193,13 @@ mod Universal {
                 }
             }
         } else if broker == "hit" {
-            let serderes=match super::serde_json::from_str(&request_res_text){
-                Ok(bs)=>{
+
+            let bs:Vec<hitbtc_ohlc>=super::serde_json::from_str(&request_res_text).unwrap();
+
                     //let bs: Vec<hitbtc_ohlc> = super::serde_json::from_str(&request_res_text);
                     for b in bs {
                         //println!("  serde {}",b.open);
+
                         let tss:super::chrono::DateTime<super::chrono::Utc>=b.timestamp.parse::<super::chrono::DateTime<super::chrono::Utc>>().unwrap();
                         //println!("  serde tss {:?}",tss);
                         let tsi:i64=tss.timestamp()*1000;
@@ -213,10 +215,8 @@ mod Universal {
                         //println!("  serde ohlc {}",ohlc.o);
                         result.push(ohlc);
                     }
-                },Err(err)=>{
-                    println("   serde error cannot read from ",request_res_text);
-                }
-            };
+
+
 
         }
         result
@@ -233,7 +233,7 @@ fn save_ohlc(client: &reqwest::Client, broker: String, pair: String, ohlc: Strin
         let getres=match res.text(){
             Ok(val)=>{
                 if val.len() > 2 {
-                    println!("patch");
+                    //println!("[{}/{}] patch",broker,pair);
                     let id = getIdFromRow(val);
                     let uripatch = format!("http://0.0.0.0:3000/{}_ohlc_1m?id=eq.{}", broker, id);
                     if let Ok(mut res) = client.patch(&uripatch).body(json).send() {
@@ -277,7 +277,7 @@ fn loadAndSaveOHLC(broker: &str, pair: &str) {
     let client = reqwest::Client::new();
     let uri = Universal::get_url("ohlc", broker, pair, 1);
     if let Ok(mut res) = client.get(&uri).send() {
-        println!("[{}] [GET_BRO] {}_ohlc ", pair.to_string(), res.status());
+        println!("[{}/{}] [GET] {} ",broker.to_string(), pair.to_string(), res.status());
         let result = match  res.text() {
             Ok(text) => {
                 let ohlcVec: Vec<StringGenericOHLC> = Universal::get_ohlc_vec("ohlc", broker.to_string(), text);
