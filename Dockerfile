@@ -8,5 +8,5 @@ ENV appname server-ohlcsaver
 
 RUN mkdir -p /coinfolio && mkdir /coinfolio/${appname}
 ADD target/release/server-ohlcsaver /coinfolio/${appname}
-RUN chmod 777 /coinfolio/${appname}/server-ohlcsaver &&  ulimit -n 2048
+RUN chmod 777 /coinfolio/${appname}/server-ohlcsaver &&  ulimit -n 4096
 CMD exec /coinfolio/${appname}/server-ohlcsaver ${pairs}
