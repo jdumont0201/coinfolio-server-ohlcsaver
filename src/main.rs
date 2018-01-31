@@ -13,23 +13,25 @@ extern crate job_scheduler;
 extern crate serde_derive;
 extern crate chrono;
 extern crate rand;
-use std::sync::{Arc, Mutex};
-use std::rc::Rc;
-use std::cell::Cell;
-use futures::{Future, Stream};
+
+
 use std::collections::HashMap;
 use std::fs::File;
-use ws::{connect, Handler, Sender, Handshake, Result, Message, CloseCode, Response};
+
 use std::thread;
 use chrono::prelude::*;
 use chrono::{DateTime, TimeZone, NaiveDateTime, Utc};
 use rand::Rng;
+
+
 fn parsei64(i: &String) -> i64 {
     i.parse::<i64>().unwrap()
 }
+
 fn parsef64(i: &String) -> f64 {
     i.parse::<f64>().unwrap()
 }
+
 fn concat(a: &str, b: &str) -> String {
     let mut owned_str: String = "".to_owned();
     owned_str.push_str(a);
@@ -88,36 +90,89 @@ fn getPairsFromArgs() -> Vec<Pair> {
     }
     PAIRS
 }
-fn getIdFromRow(val:String) -> String{
-    println!("val {}",val);
-    let idstr:Vec<&str>=val.split("id\":").collect();
-    let idstrright=idstr[1];
-    println!("val {}",idstrright);
-    let idstrr:Vec<&str>=idstrright.split("}]").collect();
-    let id=idstrr[0];
+
+fn getIdFromRow(val: String) -> String {
+    //println!("val {}", val);
+    let idstr: Vec<&str> = val.split("id\":").collect();
+    if idstr.len() ==0 { println!("err get_id_from_row {}",val);  "".to_string()}
+    else{
+
+
+    let idstrright = idstr[1];
+    //println!("val {}", idstrright);
+    let idstrr: Vec<&str> = idstrright.split("}]").collect();
+    let id = idstrr[0];
 
     id.to_string()
+    }
 }
+
 struct Pair {
     name: String,
     broker: String,
 }
 
-fn loadAndSaveOHLC(bb: &str, pp: &str) {
-    let client = reqwest::Client::new();
-    let mut lastTs = 0;
-    let uri = format!("https://api.binance.com/api/v1/klines?symbol={}&interval={}&limit=2", pp.to_string(), "1m");
-    let mut result: Vec<StringGenericOHLC> = Vec::new();
-    if (bb == "bin") {
-        if let Ok(mut res) = client.get(&uri).send() {
-            println!("[{}] [GET_BRO] {}_ohlc ", pp.to_string(), res.status());
-            let restext = res.text().unwrap();
-            let res1 = &restext[2..restext.len() - 2];
+mod Universal {
+    use reqwest::Response;
+    use StringGenericOHLC;
+    use parsei64;
+    use serde_json::from_str;
+
+    fn getInterval(broker: &str, n: u8) -> String {
+        let mut s: &str;
+        if broker == "bin" {
+            if n == 1 {
+                s = "1m";
+            } else {
+                s = "";
+            }
+        } else if broker == "hit" {
+            s = "M1";
+        } else {
+            s = "";
+        }
+        s.to_string()
+    }
+
+    pub fn get_url(task: &str, broker: &str, symbol: &str, interval: u8) -> String {
+        let interstr = getInterval(broker, interval);
+        let mut s: String;
+        if task == "ohlc" {
+            if broker == "bin" {
+                s = format!("https://api.binance.com/api/v1/klines?symbol={}&interval={}&limit=2", symbol.to_string(), interstr);
+            } else if broker == "hit" {
+                s = format!("http://api.hitbtc.com/api/2/public/candles/{}?period={}&limit=2", symbol.to_string(), interstr);
+            } else {
+                s = "".to_string();
+            }
+        } else {
+            s = "".to_string();
+        }
+        s
+    }
+
+    #[derive(Serialize, Deserialize)]
+    struct hitbtc_ohlc {
+        timestamp: String,
+        open: String,
+        close: String,
+        min: String,
+        max: String,
+        volume: String,
+        volumeQuote: String,
+    }
+    enum Value {
+        Array(Vec<hitbtc_ohlc>),
+    }
+
+    pub fn get_ohlc_vec(task: &str, broker: String, request_res_text: String) -> Vec<StringGenericOHLC> {
+        let mut result: Vec<StringGenericOHLC> = Vec::new();
+        if broker == "bin" {
+            let res1 = &request_res_text[2..request_res_text.len() - 2];
             let resspl: Vec<&str> = res1.split("],[").collect();
             for row in resspl {
                 if row.len() > 1 {
                     let res21: &str = &row[0..row.len()];
-                    //println!("  {}", res21);
                     let r: Vec<&str> = res21.split(",").collect();
                     let oo = r[1];
                     let o = oo[1..oo.len() - 1].to_string();
@@ -125,7 +180,7 @@ fn loadAndSaveOHLC(bb: &str, pp: &str) {
                     let l = r[3][1..r[3].len() - 1].to_string();
                     let c = r[4][1..r[4].len() - 1].to_string();
                     let v = r[5][1..r[5].len() - 1].to_string();
-                    let tss=parsei64(&r[0].to_string());
+                    let tss = parsei64(&r[0].to_string());
                     let ohlc: StringGenericOHLC = StringGenericOHLC {
                         ts: tss,
                         o: o,
@@ -134,61 +189,109 @@ fn loadAndSaveOHLC(bb: &str, pp: &str) {
                         c: c,
                         v: v,
                     };
-
-                    if ohlc.ts != lastTs {
-                        lastTs = ohlc.ts;
-
-                        let json = ohlc.to_json(&pp.to_string());
-                        result.push(ohlc);
-
-                        let uri = format!("http://0.0.0.0:3000/{}_ohlc_1m", bb.to_string());
-                        let tsss = chrono::Utc.timestamp(tss / 1000, 0).format("%Y-%m-%d %H:%M:%S");
-                        let uriexists = format!("http://0.0.0.0:3000/{}_ohlc_1m?pair=eq.{}&ts=eq.'{}'", bb.to_string(),pp.to_string(),tsss);
-                        if let Ok(mut res) = reqwest::get(&uriexists) {
-                            let val:String=res.text().unwrap();
-                            //println!("[{}] [GET_DA] {}_ohlc_1m existing? {} res={} len={}", pp.to_string(), bb.to_string(), res.status(), val, val.len());
-                            if val.len()>2 {
-                                println!("patch");
-                                let id=getIdFromRow(val);
-                                let uripatch = format!("http://0.0.0.0:3000/{}_ohlc_1m?id=eq.{}", bb.to_string(),id);
-                                if let Ok(mut res) = client.patch(&uripatch).body(json).send() {
-                              //      println!("[{}] [PATCH] {}_ohlc_1m {} res={} patchurl{}", pp.to_string(), bb.to_string(), res.status(), res.text().unwrap(),patchurl);
-                                    let st=res.status();
-                                    if st == hyper::StatusCode::NoContent {// ok
-                                  //      println!("[{}] [PATCH] {}_ohlc_1m {} {}", pp.to_string(), bb.to_string(), res.status(), res.text().unwrap());
-                                    } else{
-                                    //    println!("[{}] [POST] {}_ohlc_1m {} {}", pp.to_string(), bb.to_string(), res.status(), res.text().unwrap());
-                                    }
-                                }else{
-                                }
-
-                            }else{
-                                println!("post");
-                                if let Ok(mut res) = client.post(&uri).body(json).send() {
-                                    let st=res.status();
-                                    if st == hyper::StatusCode::Conflict {//existing
-                                //        println!("[{}] [POST] {}_ohlc_1m {} {}", pp.to_string(), bb.to_string(), res.status(), res.text().unwrap());
-                                    }else if st==hyper::StatusCode::Created {//created
-                              //          println!("[{}] [POST] {}_ohlc_1m {} {}", pp.to_string(), bb.to_string(), res.status(), res.text().unwrap());
-                                    } else{
-                            //            println!("[{}] [POST] {}_ohlc_1m {} {}", pp.to_string(), bb.to_string(), res.status(), res.text().unwrap());
-                                    }
-                            }
-                        }
-
-                        } else {
-                            println!("[{}] [POST] nok uri", pp.to_string());
-                        }
-                    }
-                } else {
-                    println!("  err row {}", row);
+                    result.push(ohlc);
                 }
             }
-        } else {
-            println!("[{}] [GET] nok uri {}", pp, uri);
+        } else if broker == "hit" {
+            let serderes=match super::serde_json::from_str(&request_res_text){
+                Ok(bs)=>{
+                    //let bs: Vec<hitbtc_ohlc> = super::serde_json::from_str(&request_res_text);
+                    for b in bs {
+                        //println!("  serde {}",b.open);
+                        let tss:super::chrono::DateTime<super::chrono::Utc>=b.timestamp.parse::<super::chrono::DateTime<super::chrono::Utc>>().unwrap();
+                        //println!("  serde tss {:?}",tss);
+                        let tsi:i64=tss.timestamp()*1000;
+                        //println!("  serde tsi {}",tsi);
+                        let ohlc: StringGenericOHLC = StringGenericOHLC {
+                            ts: tsi,
+                            o: b.open,
+                            h: b.max,
+                            l: b.min,
+                            c: b.close,
+                            v: b.volume,
+                        };
+                        //println!("  serde ohlc {}",ohlc.o);
+                        result.push(ohlc);
+                    }
+                },Err(err)=>{
+                    println("   serde error cannot read from ",request_res_text);
+                }
+            };
+
         }
+        result
     }
 }
+
+fn save_ohlc(client: &reqwest::Client, broker: String, pair: String, ohlc: StringGenericOHLC) {
+    let tss = ohlc.ts;
+    let json = ohlc.to_json(&pair);
+
+    let tsss = chrono::Utc.timestamp(tss / 1000, 0).format("%Y-%m-%d %H:%M:%S");
+    let uriexists = format!("http://0.0.0.0:3000/{}_ohlc_1m?pair=eq.{}&ts=eq.'{}'", broker, pair, tsss);
+    if let Ok(mut res) = reqwest::get(&uriexists) {
+        let getres=match res.text(){
+            Ok(val)=>{
+                if val.len() > 2 {
+                    println!("patch");
+                    let id = getIdFromRow(val);
+                    let uripatch = format!("http://0.0.0.0:3000/{}_ohlc_1m?id=eq.{}", broker, id);
+                    if let Ok(mut res) = client.patch(&uripatch).body(json).send() {
+                        //      println!("[{}] [PATCH] {}_ohlc_1m {} res={} patchurl{}", pp.to_string(), bb.to_string(), res.status(), res.text().unwrap(),patchurl);
+                        let st = res.status();
+                        if st == hyper::StatusCode::NoContent {// ok
+                            //      println!("[{}] [PATCH] {}_ohlc_1m {} {}", pp.to_string(), bb.to_string(), res.status(), res.text().unwrap());
+                        } else {
+                            //    println!("[{}] [POST] {}_ohlc_1m {} {}", pp.to_string(), bb.to_string(), res.status(), res.text().unwrap());
+                        }
+                    } else {}
+                } else {
+                    let uri = format!("http://0.0.0.0:3000/{}_ohlc_1m", broker);
+                    //println!("[{}] post {} {}",pair.to_string(),json);
+
+                    if let Ok(mut res) = client.post(&uri).body(json).send() {
+                        let st = res.status();
+                        //println!("[{}] [POST] {}_ohlc_1m {} {}", pp.to_string(), bb.to_string(), res.status(), res.text().unwrap());
+                        if st == hyper::StatusCode::Conflict {//existing
+                            //        println!("[{}] [POST] {}_ohlc_1m {} {}", pp.to_string(), bb.to_string(), res.status(), res.text().unwrap());
+                        } else if st == hyper::StatusCode::Created {//created
+                            //          println!("[{}] [POST] {}_ohlc_1m {} {}", pp.to_string(), bb.to_string(), res.status(), res.text().unwrap());
+                        } else {
+                            //            println!("[{}] [POST] {}_ohlc_1m {} {}", pp.to_string(), bb.to_string(), res.status(), res.text().unwrap());
+                        }
+                    }
+                }
+            },
+            Err(err)=>{
+                println!("[{}] [GET_DA] !!{}_ohlc_1m existing? {} ", pair, broker,err);
+            }
+        };
+        //println!("[{}] [GET_DA] {}_ohlc_1m existing? {} res={} len={}", pp.to_string(), bb.to_string(), res.status(), val, val.len());
+
+    } else {
+        println!("[{}] [POST] nok uri", pair);
+    }
+}
+
+fn loadAndSaveOHLC(broker: &str, pair: &str) {
+    let client = reqwest::Client::new();
+    let uri = Universal::get_url("ohlc", broker, pair, 1);
+    if let Ok(mut res) = client.get(&uri).send() {
+        println!("[{}] [GET_BRO] {}_ohlc ", pair.to_string(), res.status());
+        let result = match  res.text() {
+            Ok(text) => {
+                let ohlcVec: Vec<StringGenericOHLC> = Universal::get_ohlc_vec("ohlc", broker.to_string(), text);
+                for bar in ohlcVec {
+                    save_ohlc(&client, broker.to_string(), pair.to_string(), bar);
+                }
+            },
+            Err(err) => {
+                println!("[{}] [GET_BRO] ohlc ERR !!!  {}", pair.to_string(), err);
+            }
+        };
+    }
+}
+
 
 fn main() {
     println!("Coinamics Server OHLC saver");
@@ -206,9 +309,9 @@ fn main() {
             let mut rng = rand::thread_rng();
 
             sched.add(job_scheduler::Job::new("10 * * * * *".parse().unwrap(), || {
-                let delay = rand::thread_rng().gen_range(0, 5);
+                let delay = rand::thread_rng().gen_range(0, 10);
                 thread::sleep(std::time::Duration::new(delay, 0));
-                loadAndSaveOHLC(&bb,&pp);
+                loadAndSaveOHLC(&bb, &pp);
             }));
             loop {
                 sched.tick();
