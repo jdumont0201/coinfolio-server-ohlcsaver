@@ -23,6 +23,7 @@ use chrono::prelude::*;
 use chrono::{DateTime, TimeZone, NaiveDateTime, Utc};
 use rand::Rng;
 
+static DB_ADDRESS:&str="http://0.0.0.0:3000";
 
 fn parsei64(i: &String) -> i64 {
     i.parse::<i64>().unwrap()
@@ -94,16 +95,16 @@ fn getPairsFromArgs() -> Vec<Pair> {
 fn getIdFromRow(val: String) -> String {
     //println!("val {}", val);
     let idstr: Vec<&str> = val.split("id\":").collect();
-    if idstr.len() ==0 { println!("err get_id_from_row {}",val);  "".to_string()}
-    else{
+    if idstr.len() == 0 {
+        println!("err get_id_from_row {}", val);
+        "".to_string()
+    } else {
+        let idstrright = idstr[1];
+        //println!("val {}", idstrright);
+        let idstrr: Vec<&str> = idstrright.split("}]").collect();
+        let id = idstrr[0];
 
-
-    let idstrright = idstr[1];
-    //println!("val {}", idstrright);
-    let idstrr: Vec<&str> = idstrright.split("}]").collect();
-    let id = idstrr[0];
-
-    id.to_string()
+        id.to_string()
     }
 }
 
@@ -111,6 +112,8 @@ struct Pair {
     name: String,
     broker: String,
 }
+
+
 
 mod Universal {
     use reqwest::Response;
@@ -161,6 +164,7 @@ mod Universal {
         volume: String,
         volumeQuote: String,
     }
+
     enum Value {
         Array(Vec<hitbtc_ohlc>),
     }
@@ -180,7 +184,7 @@ mod Universal {
                     let l = r[3][1..r[3].len() - 1].to_string();
                     let c = r[4][1..r[4].len() - 1].to_string();
                     let v = r[5][1..r[5].len() - 1].to_string();
-                    let tss:i64 = parsei64(&r[0].to_string());
+                    let tss: i64 = parsei64(&r[0].to_string());
                     let ohlc: StringGenericOHLC = StringGenericOHLC {
                         ts: tss,
                         o: o,
@@ -193,31 +197,27 @@ mod Universal {
                 }
             }
         } else if broker == "hit" {
+            let bs: Vec<hitbtc_ohlc> = super::serde_json::from_str(&request_res_text).unwrap();
 
-            let bs:Vec<hitbtc_ohlc>=super::serde_json::from_str(&request_res_text).unwrap();
+            //let bs: Vec<hitbtc_ohlc> = super::serde_json::from_str(&request_res_text);
+            for b in bs {
+                //println!("  serde {}",b.open);
 
-                    //let bs: Vec<hitbtc_ohlc> = super::serde_json::from_str(&request_res_text);
-                    for b in bs {
-                        //println!("  serde {}",b.open);
-
-                        let tss:super::chrono::DateTime<super::chrono::Utc>=b.timestamp.parse::<super::chrono::DateTime<super::chrono::Utc>>().unwrap();
-                        //println!("  serde tss {:?}",tss);
-                        let tsi:i64=tss.timestamp()*1000;
-                        //println!("  serde tsi {}",tsi);
-                        let ohlc: StringGenericOHLC = StringGenericOHLC {
-                            ts: tsi,
-                            o: b.open,
-                            h: b.max,
-                            l: b.min,
-                            c: b.close,
-                            v: b.volume,
-                        };
-                        //println!("  serde ohlc {}",ohlc.o);
-                        result.push(ohlc);
-                    }
-
-
-
+                let tss: super::chrono::DateTime<super::chrono::Utc> = b.timestamp.parse::<super::chrono::DateTime<super::chrono::Utc>>().unwrap();
+                //println!("  serde tss {:?}",tss);
+                let tsi: i64 = tss.timestamp() * 1000;
+                //println!("  serde tsi {}",tsi);
+                let ohlc: StringGenericOHLC = StringGenericOHLC {
+                    ts: tsi,
+                    o: b.open,
+                    h: b.max,
+                    l: b.min,
+                    c: b.close,
+                    v: b.volume,
+                };
+                //println!("  serde ohlc {}",ohlc.o);
+                result.push(ohlc);
+            }
         }
         result
     }
@@ -228,14 +228,14 @@ fn save_ohlc(client: &reqwest::Client, broker: String, pair: String, ohlc: Strin
     let json = ohlc.to_json(&pair);
 
     let tsss = chrono::Utc.timestamp(tss / 1000, 0).format("%Y-%m-%d %H:%M:%S");
-    let uriexists = format!("http://0.0.0.0:3000/{}_ohlc_1m?pair=eq.{}&ts=eq.'{}'", broker, pair, tsss);
+    let uriexists = format!("{}/{}_ohlc_1m?pair=eq.{}&ts=eq.'{}'",DB_ADDRESS, broker, pair, tsss);
     if let Ok(mut res) = reqwest::get(&uriexists) {
-        let getres=match res.text(){
-            Ok(val)=>{
+        let getres = match res.text() {
+            Ok(val) => {
                 if val.len() > 2 {
                     //println!("[{}/{}] patch",broker,pair);
                     let id = getIdFromRow(val);
-                    let uripatch = format!("http://0.0.0.0:3000/{}_ohlc_1m?id=eq.{}", broker, id);
+                    let uripatch = format!("{}/{}_ohlc_1m?id=eq.{}", DB_ADDRESS,broker, id);
                     if let Ok(mut res) = client.patch(&uripatch).body(json).send() {
                         //      println!("[{}] [PATCH] {}_ohlc_1m {} res={} patchurl{}", pp.to_string(), bb.to_string(), res.status(), res.text().unwrap(),patchurl);
                         let st = res.status();
@@ -246,7 +246,7 @@ fn save_ohlc(client: &reqwest::Client, broker: String, pair: String, ohlc: Strin
                         }
                     } else {}
                 } else {
-                    let uri = format!("http://0.0.0.0:3000/{}_ohlc_1m", broker);
+                    let uri = format!("{}/{}_ohlc_1m",DB_ADDRESS, broker);
                     //println!("[{}] post {} {}",pair.to_string(),json);
 
                     if let Ok(mut res) = client.post(&uri).body(json).send() {
@@ -261,13 +261,12 @@ fn save_ohlc(client: &reqwest::Client, broker: String, pair: String, ohlc: Strin
                         }
                     }
                 }
-            },
-            Err(err)=>{
-                println!("[{}] [GET_DA] !!{}_ohlc_1m existing? {} ", pair, broker,err);
+            }
+            Err(err) => {
+                println!("[{}] [GET_DA] !!{}_ohlc_1m existing? {} ", pair, broker, err);
             }
         };
         //println!("[{}] [GET_DA] {}_ohlc_1m existing? {} res={} len={}", pp.to_string(), bb.to_string(), res.status(), val, val.len());
-
     } else {
         println!("[{}] [POST] nok uri", pair);
     }
@@ -277,16 +276,122 @@ fn loadAndSaveOHLC(broker: &str, pair: &str) {
     let client = reqwest::Client::new();
     let uri = Universal::get_url("ohlc", broker, pair, 1);
     if let Ok(mut res) = client.get(&uri).send() {
-        println!("[{}/{}] [GET] {} ",broker.to_string(), pair.to_string(), res.status());
-        let result = match  res.text() {
+        println!("[{}/{}] [GET] {} ", broker.to_string(), pair.to_string(), res.status());
+        let result = match res.text() {
             Ok(text) => {
                 let ohlcVec: Vec<StringGenericOHLC> = Universal::get_ohlc_vec("ohlc", broker.to_string(), text);
                 for bar in ohlcVec {
                     save_ohlc(&client, broker.to_string(), pair.to_string(), bar);
                 }
-            },
+            }
             Err(err) => {
                 println!("[{}] [GET_BRO] ohlc ERR !!!  {}", pair.to_string(), err);
+            }
+        };
+    }
+}
+
+mod CoinMarketCap {
+    use reqwest;
+    use chrono;
+    use hyper;
+    use chrono::prelude::*;
+    use chrono::{DateTime, TimeZone, NaiveDateTime, Utc};
+    #[derive(Serialize, Deserialize)]
+   pub struct Data {
+        id: String,
+        name: String,
+        symbol: String,
+        rank: String,
+        price_usd: String,
+        price_btc: String,
+        // 24h_volume_usd: String,
+        market_cap_usd: String,
+        available_supply: String,
+        total_supply: String,
+        max_supply: Option<String>,
+        percent_change_1h: String,
+        percent_change_24h: String,
+        percent_change_7d: String,
+        last_updated: String,
+    }
+    impl Data{
+        fn to_json(&self) -> String {
+            let tsi:i64=self.last_updated.parse::<i64>().unwrap();
+            let ts = super::chrono::Utc.timestamp(tsi , 0).format("%Y-%m-%d %H:%M:%S");
+            let maxsup;let s;
+            match self.max_supply{
+                Some(ref ma)=>{
+                    maxsup=ma.to_string();
+                    s = format!(r#"{{"ts" :"{}","symbol"  :"{}","marketcap"  :"{}","supply":"{}","maxsupply":"{}"}}"#, ts, self.symbol,self.market_cap_usd,self.total_supply,maxsup);
+                },None=>{
+
+                    s = format!(r#"{{"ts" :"{}","symbol"  :"{}","marketcap"  :"{}","supply":"{}"}}"#, ts, self.symbol,self.market_cap_usd,self.total_supply);
+                }
+            };
+
+            s
+        }
+    }
+    fn parse(text: &str) {}
+
+    pub fn save_coinmarketcap(client: &reqwest::Client,  data: Data) {
+        let tsi=data.last_updated.parse::<i64>().unwrap();
+        let ts = chrono::Utc.timestamp(tsi , 0).format("%Y-%m-%d %H:%M:%S");
+        let json = data.to_json();
+        let uriexists = format!("{}/cmc_cap?symbol=eq.{}&ts=eq.'{}'",super::DB_ADDRESS, data.symbol,ts);
+        println!("save {}",json);
+        if let Ok(mut res) = reqwest::get(&uriexists) {
+            //println!("get ok");
+            let getres = match res.text() {
+                Ok(val) => {
+              //      println!("getres {}",val);
+                    if val.len() > 2 { //already exists, do nothing
+
+                    } else {
+                        let uri = format!("{}/cmc_cap",super::DB_ADDRESS);
+                //        println!("post {}",json);
+
+                        if let Ok(mut res) = client.post(&uri).body(json).send() {
+
+                            let st = res.status();
+                  //          println!("post st {}",st);
+                            //println!("[{}] [POST] {}_ohlc_1m {} {}", pp.to_string(), bb.to_string(), res.status(), res.text().unwrap());
+                            if st == hyper::StatusCode::Conflict {//existing
+                                //        println!("[{}] [POST] {}_ohlc_1m {} {}", pp.to_string(), bb.to_string(), res.status(), res.text().unwrap());
+                            } else if st == hyper::StatusCode::Created {//created
+                                //          println!("[{}] [POST] {}_ohlc_1m {} {}", pp.to_string(), bb.to_string(), res.status(), res.text().unwrap());
+                            } else {
+                                //            println!("[{}] [POST] {}_ohlc_1m {} {}", pp.to_string(), bb.to_string(), res.status(), res.text().unwrap());
+                            }
+                        }
+                    }
+                }
+                Err(err) => {
+                    println!("[GET_CMC] !!cmc_cap existing? {} ", err);
+                }
+            };
+        } else {
+            println!("[GET] nok uri {}",uriexists);
+        }
+    }
+}
+
+
+fn loadAndSaveCoinMarketCap() {
+    let client = reqwest::Client::new();
+    let uri = "https://api.coinmarketcap.com/v1/ticker/";
+    if let Ok(mut res) = client.get(uri).send() {
+        println!("[GET] {} ", res.status());
+        let result = match res.text() {
+            Ok(text) => {
+                let data: Vec<CoinMarketCap::Data> = serde_json::from_str(&text).unwrap();
+                for d in data {
+                    CoinMarketCap::save_coinmarketcap(&client,d);
+                }
+            }
+            Err(err) => {
+                println!(" [GET_CAP] cap ERR !!!  {}",  err);
             }
         };
     }
@@ -319,6 +424,20 @@ fn main() {
             }
         }));
     }
+
+    children.push(thread::spawn(move || {
+        println!("Starting CMC  threads");
+        let mut sched = job_scheduler::JobScheduler::new();
+        sched.add(job_scheduler::Job::new("40 * * * * *".parse().unwrap(), || {
+            let delay = rand::thread_rng().gen_range(0, 10);
+            thread::sleep(std::time::Duration::new(delay, 0));
+            loadAndSaveCoinMarketCap();
+        }));
+        loop {
+            sched.tick();
+            std::thread::sleep(std::time::Duration::from_millis(500));
+        }
+    }));
     for child in children {
         let _ = child.join();
     }
