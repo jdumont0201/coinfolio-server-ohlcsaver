@@ -428,7 +428,7 @@ fn main() {
     children.push(thread::spawn(move || {
         println!("Starting CMC  threads");
         let mut sched = job_scheduler::JobScheduler::new();
-        sched.add(job_scheduler::Job::new("0 1/5 * * * *".parse().unwrap(), || {
+        sched.add(job_scheduler::Job::new("0 1,6,11,16,21,26,31,36,41,46,51,56 * * * *".parse().unwrap(), || {
             let delay = rand::thread_rng().gen_range(0, 10);
             thread::sleep(std::time::Duration::new(delay, 0));
             loadAndSaveCoinMarketCap();
