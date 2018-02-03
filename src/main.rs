@@ -428,14 +428,14 @@ fn main() {
     children.push(thread::spawn(move || {
         println!("Starting CMC  threads");
         let mut sched = job_scheduler::JobScheduler::new();
-        sched.add(job_scheduler::Job::new("40 * * * * *".parse().unwrap(), || {
+        sched.add(job_scheduler::Job::new("0 1/5 * * * *".parse().unwrap(), || {
             let delay = rand::thread_rng().gen_range(0, 10);
             thread::sleep(std::time::Duration::new(delay, 0));
             loadAndSaveCoinMarketCap();
         }));
         loop {
             sched.tick();
-            std::thread::sleep(std::time::Duration::from_millis(500));
+            std::thread::sleep(std::time::Duration::from_millis(10000));
         }
     }));
     for child in children {
