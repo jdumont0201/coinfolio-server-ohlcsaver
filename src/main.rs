@@ -279,8 +279,8 @@ fn loadAndSaveOHLC(broker: &str, pair: &str) {
         println!("[{}/{}] [GET] {} ", broker.to_string(), pair.to_string(), res.status());
         let result = match res.text() {
             Ok(text) => {
-                let ohlcVec: Vec<StringGenericOHLC> = Universal::get_ohlc_vec("ohlc", broker.to_string(), text);
-                for bar in ohlcVec {
+                let ohlc_vec: Vec<StringGenericOHLC> = Universal::get_ohlc_vec("ohlc", broker.to_string(), text);
+                for bar in ohlc_vec {
                     save_ohlc(&client, broker.to_string(), pair.to_string(), bar);
                 }
             }
@@ -378,7 +378,8 @@ mod CoinMarketCap {
 }
 
 
-fn loadAndSaveCoinMarketCap() {
+fn fetch_and_save_cmc() {
+    println!(" -> CMC market cap");
     let client = reqwest::Client::new();
     let uri = "https://api.coinmarketcap.com/v1/ticker/";
     if let Ok(mut res) = client.get(uri).send() {
@@ -416,7 +417,7 @@ fn main() {
             sched.add(job_scheduler::Job::new("10 * * * * *".parse().unwrap(), || {
                 let delay = rand::thread_rng().gen_range(0, 10);
                 thread::sleep(std::time::Duration::new(delay, 0));
-                loadAndSaveOHLC(&bb, &pp);
+            //    loadAndSaveOHLC(&bb, &pp);
             }));
             loop {
                 sched.tick();
@@ -428,14 +429,14 @@ fn main() {
     children.push(thread::spawn(move || {
         println!("Starting CMC  threads");
         let mut sched = job_scheduler::JobScheduler::new();
-        sched.add(job_scheduler::Job::new("0 1,6,11,16,21,26,31,36,41,46,51,56 * * * *".parse().unwrap(), || {
+        sched.add(job_scheduler::Job::new("30 1,6,11,16,21,26,31,36,41,46,51,56 * * * *".parse().unwrap(), || {
             let delay = rand::thread_rng().gen_range(0, 10);
             thread::sleep(std::time::Duration::new(delay, 0));
-            loadAndSaveCoinMarketCap();
+            fetch_and_save_cmc();
         }));
         loop {
             sched.tick();
-            std::thread::sleep(std::time::Duration::from_millis(10000));
+            std::thread::sleep(std::time::Duration::from_millis(1000));
         }
     }));
     for child in children {
