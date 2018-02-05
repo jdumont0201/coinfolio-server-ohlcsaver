@@ -304,13 +304,14 @@ fn main() {
         let pp = p.name.clone();
         let bb = p.broker.clone();
         children.push(thread::spawn(move || {
+            
             let mut sched = job_scheduler::JobScheduler::new();
             let mut rng = rand::thread_rng();
 
             sched.add(job_scheduler::Job::new("10 * * * * *".parse().unwrap(), || {
                 let delay = rand::thread_rng().gen_range(0, 10);
                 thread::sleep(std::time::Duration::new(delay, 0));
-            //    loadAndSaveOHLC(&bb, &pp);
+                loadAndSaveOHLC(&bb, &pp);
             }));
             loop {
                 sched.tick();
