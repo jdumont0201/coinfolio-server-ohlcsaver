@@ -22,7 +22,7 @@ use chrono::prelude::*;
 use chrono::{DateTime, TimeZone, NaiveDateTime, Utc};
 use rand::Rng;
 
-static DB_ADDRESS:&str="http://0.0.0.0:3000";
+static DB_ADDRESS: &str = "http://0.0.0.0:3000";
 
 fn parsei64(i: &String) -> i64 {
     i.parse::<i64>().unwrap()
@@ -113,7 +113,6 @@ struct Pair {
 }
 
 
-
 mod Universal {
     use reqwest::Response;
     use StringGenericOHLC;
@@ -196,26 +195,33 @@ mod Universal {
                 }
             }
         } else if broker == "hit" {
-            let bs: Vec<hitbtc_ohlc> = super::serde_json::from_str(&request_res_text).unwrap();
+            let bs: Result<Vec<hitbtc_ohlc>,super::serde_json::Error> = super::serde_json::from_str(&request_res_text);
+            match bs {
+                Ok(bs_) => {
+                    for b in bs_ {
+                        let tss: Result<super::chrono::DateTime<super::chrono::Utc>,super::chrono::format::ParseError> = b.timestamp.parse::<super::chrono::DateTime<super::chrono::Utc>>();
+                        match tss{
+                            Ok(tss_)=>{
+                                let tsi: i64 = tss_.timestamp() * 1000;
+                                let ohlc: StringGenericOHLC = StringGenericOHLC {
+                                    ts: tsi,
+                                    o: b.open,
+                                    h: b.max,
+                                    l: b.min,
+                                    c: b.close,
+                                    v: b.volume,
+                                };
+                                //println!("  serde ohlc {}",ohlc.o);
+                                result.push(ohlc);
+                            },Err(err)=>{
 
-            //let bs: Vec<hitbtc_ohlc> = super::serde_json::from_str(&request_res_text);
-            for b in bs {
-                //println!("  serde {}",b.open);
-
-                let tss: super::chrono::DateTime<super::chrono::Utc> = b.timestamp.parse::<super::chrono::DateTime<super::chrono::Utc>>().unwrap();
-                //println!("  serde tss {:?}",tss);
-                let tsi: i64 = tss.timestamp() * 1000;
-                //println!("  serde tsi {}",tsi);
-                let ohlc: StringGenericOHLC = StringGenericOHLC {
-                    ts: tsi,
-                    o: b.open,
-                    h: b.max,
-                    l: b.min,
-                    c: b.close,
-                    v: b.volume,
-                };
-                //println!("  serde ohlc {}",ohlc.o);
-                result.push(ohlc);
+                            }
+                        }
+                    }
+                },
+                Err(err) => {
+                    println!("Cannot unmarshall {}",broker)
+                }
             }
         }
         result
@@ -227,14 +233,14 @@ fn save_ohlc(client: &reqwest::Client, broker: String, pair: String, ohlc: Strin
     let json = ohlc.to_json(&pair);
 
     let tsss = chrono::Utc.timestamp(tss / 1000, 0).format("%Y-%m-%d %H:%M:%S");
-    let uriexists = format!("{}/{}_ohlc_1m?pair=eq.{}&ts=eq.'{}'",DB_ADDRESS, broker, pair, tsss);
+    let uriexists = format!("{}/{}_ohlc_1m?pair=eq.{}&ts=eq.'{}'", DB_ADDRESS, broker, pair, tsss);
     if let Ok(mut res) = reqwest::get(&uriexists) {
         let getres = match res.text() {
             Ok(val) => {
                 if val.len() > 2 {
                     //println!("[{}/{}] patch",broker,pair);
                     let id = getIdFromRow(val);
-                    let uripatch = format!("{}/{}_ohlc_1m?id=eq.{}", DB_ADDRESS,broker, id);
+                    let uripatch = format!("{}/{}_ohlc_1m?id=eq.{}", DB_ADDRESS, broker, id);
                     if let Ok(mut res) = client.patch(&uripatch).body(json).send() {
                         //      println!("[{}] [PATCH] {}_ohlc_1m {} res={} patchurl{}", pp.to_string(), bb.to_string(), res.status(), res.text().unwrap(),patchurl);
                         let st = res.status();
@@ -245,7 +251,7 @@ fn save_ohlc(client: &reqwest::Client, broker: String, pair: String, ohlc: Strin
                         }
                     } else {}
                 } else {
-                    let uri = format!("{}/{}_ohlc_1m",DB_ADDRESS, broker);
+                    let uri = format!("{}/{}_ohlc_1m", DB_ADDRESS, broker);
                     //println!("[{}] post {} {}",pair.to_string(),json);
 
                     if let Ok(mut res) = client.post(&uri).body(json).send() {
@@ -291,7 +297,6 @@ fn loadAndSaveOHLC(broker: &str, pair: &str) {
 }
 
 
-
 fn main() {
     println!("Coinamics Server OHLC saver");
     let mut children = vec![];
@@ -304,7 +309,6 @@ fn main() {
         let pp = p.name.clone();
         let bb = p.broker.clone();
         children.push(thread::spawn(move || {
-            
             let mut sched = job_scheduler::JobScheduler::new();
             let mut rng = rand::thread_rng();
 
